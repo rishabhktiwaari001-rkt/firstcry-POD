@@ -4,7 +4,13 @@ import json
 
 # --- CONFIGURATION ---
 # This securely gets the key from your Streamlit "Secrets" vault
-api_key = st.secrets["OPENAI_API_KEY"]
+# It MUST match the name in your Settings -> Secrets exactly
+try:
+    api_key = st.secrets["OPENAI_API_KEY"]
+except:
+    # This prevents the "123" error by stopping the app if the key is missing
+    st.error("🚨 API Key missing! Please go to 'Manage App' > 'Settings' > 'Secrets' and add OPENAI_API_KEY.")
+    st.stop()
 
 client = openai.OpenAI(api_key=api_key)
 
@@ -25,7 +31,7 @@ if 'generated_content' not in st.session_state:
 if 'quiz_submitted' not in st.session_state:
     st.session_state['quiz_submitted'] = False
 
-# --- AI GENERATION FUNCTION (UPDATED FOR COMPREHENSIVE COVERAGE) ---
+# --- AI GENERATION FUNCTION ---
 def generate_training_material(product_text):
     prompt = f"""
     You are a professional retail trainer for FirstCry.
@@ -96,9 +102,8 @@ if st.session_state['generated_content']:
     st.markdown("---")
     st.subheader("📝 Daily Knowledge Check")
     
-    user_answers = {}
-    
     with st.form("quiz_form"):
+        user_answers = {}
         for i, q in enumerate(data['quiz']):
             st.markdown(f"**Q{i+1}: {q['question']}**")
             user_answers[i] = st.radio(f"Select answer for Q{i+1}", q['options'], key=f"q{i}", index=None)
@@ -113,7 +118,8 @@ if st.session_state['generated_content']:
             # Grading Logic
             st.markdown("### Results:")
             for i, q in enumerate(data['quiz']):
-                correct_option = q['options'][q['correct_index']]
+                correct_idx = int(q['correct_index']) # Added int() for safety
+                correct_option = q['options'][correct_idx]
                 user_choice = user_answers.get(i)
                 
                 if user_choice == correct_option:
