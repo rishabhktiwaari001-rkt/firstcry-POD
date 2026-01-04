@@ -3,9 +3,8 @@ import openai
 import json
 
 # --- CONFIGURATION ---
-# In a real production environment, use st.secrets for the API key
-# st.secrets["OPENAI_API_KEY"]
-api_key = "123"
+# This securely gets the key from your Streamlit "Secrets" vault
+api_key = st.secrets["OPENAI_API_KEY"]
 
 client = openai.OpenAI(api_key=api_key)
 
