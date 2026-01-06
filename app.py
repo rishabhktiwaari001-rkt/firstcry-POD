@@ -23,7 +23,7 @@ def check_login():
     password = st.text_input("Enter Store Password", type="password")
     if st.button("Login"):
         # Checks against the password in Secrets (or defaults to Firstcry2026)
-        secret_pass = st.secrets.get("APP_PASSWORD", "FirstCry2024") 
+        secret_pass = st.secrets.get("APP_PASSWORD", "Firstcry2026") 
         if password == secret_pass:
             st.session_state["logged_in"] = True
             st.rerun()
