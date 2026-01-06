@@ -22,8 +22,8 @@ def check_login():
     st.markdown("### 🔒 FirstCry Staff Login")
     password = st.text_input("Enter Store Password", type="password")
     if st.button("Login"):
-        # Ensure you added APP_PASSWORD in your Secrets, or change "1234" to your default here
-        secret_pass = st.secrets.get("APP_PASSWORD", "FirstCry2026") 
+        # Checks against the password in Secrets (or defaults to Firstcry2026)
+        secret_pass = st.secrets.get("APP_PASSWORD", "FirstCry2024") 
         if password == secret_pass:
             st.session_state["logged_in"] = True
             st.rerun()
@@ -32,7 +32,7 @@ def check_login():
 
 if not st.session_state["logged_in"]:
     check_login()
-    st.stop() # Stops the app here if not logged in
+    st.stop()
 
 # --- 3. SESSION STATE INITIALIZATION ---
 if 'generated_content' not in st.session_state:
@@ -52,7 +52,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 5. AI GENERATION FUNCTION ---
+# --- 5. AI GENERATION FUNCTION (Restored Detailed Prompt) ---
 def generate_training_material(product_text):
     prompt = f"""
     You are a professional retail trainer for FirstCry.
@@ -60,15 +60,17 @@ def generate_training_material(product_text):
     
     Output strictly in JSON format with this structure:
     {{
-        "summary": "Key features bullet points (English). Cover safety, material, age, etc.",
-        "pitch_hinglish": "A natural Hindi+English sales pitch. Include ALL technical specs like dimensions/materials naturally. Example: 'Madam, iska frame aluminium ka hai...'",
+        "summary": "A comprehensive bulleted summary in English. It MUST cover every single feature, specification, material detail, and age recommendation mentioned in the input text. Do not leave out any technical details.",
+        
+        "pitch_hinglish": "A detailed and persuasive sales pitch in 'Hinglish' (Hindi + English mix). IMPORTANT: You must incorporate EVERY single product specification (dimensions, weight, safety, materials, etc.) found in the input text into this pitch. Do not skip any features. Make it sound natural but ensure 100% of the product details are covered.",
+        
         "quiz": [
             {{
-                "question": "Question 1 (Hinglish)",
+                "question": "Question 1 in Hinglish covering a specific feature",
                 "options": ["Option A", "Option B", "Option C"],
                 "correct_index": 0 
             }},
-            ... (Generate exactly 5 questions)
+            ... (Generate exactly 5 questions based on different features)
         ]
     }}
     """
@@ -90,17 +92,17 @@ def generate_training_material(product_text):
 st.image("https://cdn.fcglcdn.com/brainbees/images/n/fc_logo.png", width=150)
 st.title("FirstCry Product of the Day")
 
-# --- VIEW 1: INPUT & STUDY MODE (Only shows if NOT in Test Mode) ---
+# --- VIEW 1: STUDY MODE (Shows Summary & Pitch) ---
 if not st.session_state['test_mode']:
     
     st.info("ℹ️ Step 1: Generate Training -> Step 2: Read Pitch -> Step 3: Start Test")
     
-    # Only show input box if content is not yet generated
+    # Input Box
     if not st.session_state['generated_content']:
         product_input = st.text_area("Paste Product Details Here:", height=150)
         if st.button("Generate Training Module"):
             if product_input:
-                with st.spinner("Creating Training Module..."):
+                with st.spinner("Creating Summary, Pitch, and Quiz..."):
                     data = generate_training_material(product_input)
                     if data:
                         st.session_state['generated_content'] = data
@@ -108,31 +110,31 @@ if not st.session_state['test_mode']:
             else:
                 st.warning("Please paste product details first.")
 
-    # If content exists, show the Study Material
+    # Show Content (Summary + Pitch)
     if st.session_state['generated_content']:
         data = st.session_state['generated_content']
         
         st.markdown("---")
-        st.subheader("📌 Product Summary (Read Carefully)")
-        st.info(data['summary'])
+        st.subheader("📌 Product Summary")
+        st.info(data['summary'])  # <--- This will now show the detailed summary again!
         
         st.markdown("---")
         st.subheader("🗣️ Sales Pitch (Hindi)")
         st.markdown(f"<div class='hindi-text'>{data['pitch_hinglish']}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
-        st.warning("⚠️ Once you click 'Start Test', this content will disappear!")
+        st.warning("⚠️ Once you click 'Start Test', the summary and pitch will disappear!")
         
         if st.button("🔒 Lock Content & Start Test"):
             st.session_state['test_mode'] = True
             st.rerun()
 
-# --- VIEW 2: EXAM MODE (Only shows if Test Mode IS Active) ---
+# --- VIEW 2: EXAM MODE (Hidden Summary) ---
 else:
     data = st.session_state['generated_content']
     
     st.markdown("### 📝 Knowledge Check")
-    st.info("The study material is now hidden. Good luck!")
+    st.info("The study material is now hidden to prevent cheating. Good luck!")
     
     # STAFF NAME INPUT
     staff_name = st.text_input("Enter Staff Name (Required):")
@@ -165,7 +167,7 @@ else:
                     else:
                         st.error(f"Q{i+1}: ❌ Wrong. Correct: {correct_option}")
                 
-                # Final Score
+                # Final Score Logic
                 percentage = (score / total) * 100
                 if percentage == 100:
                     st.balloons()
@@ -178,7 +180,7 @@ else:
     else:
         st.warning("Please enter your name to see the questions.")
 
-    # Reset Button to start over
+    # Reset Button
     st.markdown("---")
     if st.button("🔄 Start New Product Training"):
         st.session_state['generated_content'] = None
