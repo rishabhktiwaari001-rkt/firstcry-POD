@@ -70,7 +70,7 @@ def generate_training_material(product_text):
                 "options": ["Option A", "Option B", "Option C"],
                 "correct_index": 0 
             }},
-            ... (Generate exactly 5 questions based on different features)
+            ... (Generate exactly 10 questions based on different features)
         ]
     }}
     """
@@ -172,7 +172,7 @@ else:
                 if percentage == 100:
                     st.balloons()
                     st.success(f"🏆 PERFECT SCORE! {score}/{total}")
-                elif percentage >= 50:
+                elif percentage >= 80:
                     st.warning(f"✅ PASSED: {score}/{total}")
                 else:
                     st.error(f"❌ FAILED: {score}/{total} - Please read again.")
