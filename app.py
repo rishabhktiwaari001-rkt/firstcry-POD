@@ -22,8 +22,8 @@ def check_login():
     st.markdown("### 🔒 FirstCry Staff Login")
     password = st.text_input("Enter Store Password", type="password")
     if st.button("Login"):
-        # Checks against the password in Secrets (or defaults to Firstcry2026)
-        secret_pass = st.secrets.get("APP_PASSWORD", "Firstcry2026") 
+        # Checks against the password in Secrets (or defaults to FirstCry2024)
+        secret_pass = st.secrets.get("APP_PASSWORD", "FirstCry2024") 
         if password == secret_pass:
             st.session_state["logged_in"] = True
             st.rerun()
@@ -52,7 +52,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 5. AI GENERATION FUNCTION (Restored Detailed Prompt) ---
+# --- 5. AI GENERATION FUNCTION ---
 def generate_training_material(product_text):
     prompt = f"""
     You are a professional retail trainer for FirstCry.
@@ -70,7 +70,7 @@ def generate_training_material(product_text):
                 "options": ["Option A", "Option B", "Option C"],
                 "correct_index": 0 
             }},
-            ... (Generate exactly 10 questions based on different features)
+            ... (Generate exactly 5 questions based on different features)
         ]
     }}
     """
@@ -116,7 +116,7 @@ if not st.session_state['test_mode']:
         
         st.markdown("---")
         st.subheader("📌 Product Summary")
-        st.info(data['summary'])  # <--- This will now show the detailed summary again!
+        st.info(data['summary'])
         
         st.markdown("---")
         st.subheader("🗣️ Sales Pitch (Hindi)")
@@ -129,53 +129,69 @@ if not st.session_state['test_mode']:
             st.session_state['test_mode'] = True
             st.rerun()
 
-# --- VIEW 2: EXAM MODE (Hidden Summary) ---
+# --- VIEW 2: EXAM MODE (Summary Hidden + Anti-Cheat Locked Inputs) ---
 else:
     data = st.session_state['generated_content']
     
     st.markdown("### 📝 Knowledge Check")
-    st.info("The study material is now hidden to prevent cheating. Good luck!")
+    st.info("The study material is now hidden. Good luck!")
     
     # STAFF NAME INPUT
-    staff_name = st.text_input("Enter Staff Name (Required):")
+    staff_name = st.text_input("Enter Staff Name (Required):", disabled=st.session_state['quiz_submitted'])
     
     if staff_name:
+        # Determine if inputs should be disabled (locked)
+        is_locked = st.session_state['quiz_submitted']
+
         with st.form("quiz_form"):
             user_answers = {}
             for i, q in enumerate(data['quiz']):
                 st.markdown(f"**Q{i+1}: {q['question']}**")
-                user_answers[i] = st.radio(f"Select answer:", q['options'], key=f"q{i}", index=None)
+                # KEY CHANGE: 'disabled=is_locked' prevents changing answers after submit
+                user_answers[i] = st.radio(
+                    f"Select answer:", 
+                    q['options'], 
+                    key=f"q{i}", 
+                    index=None, 
+                    disabled=is_locked 
+                )
                 st.write("") # Spacer
             
-            submit_button = st.form_submit_button("Submit Test")
+            # Show Submit Button only if NOT yet submitted
+            submit_button = st.form_submit_button("Submit Test", disabled=is_locked)
 
             if submit_button:
-                score = 0
-                total = len(data['quiz'])
+                st.session_state['quiz_submitted'] = True
+                st.rerun()
+
+        # --- RESULTS SECTION (Runs outside the form so it persists) ---
+        if st.session_state['quiz_submitted']:
+            score = 0
+            total = len(data['quiz'])
+            
+            st.markdown("---")
+            st.markdown(f"### 📊 Result for: **{staff_name}**")
+            
+            for i, q in enumerate(data['quiz']):
+                correct_idx = int(q['correct_index'])
+                correct_option = q['options'][correct_idx]
+                user_choice = user_answers.get(i)
                 
-                st.markdown("---")
-                st.markdown(f"### 📊 Result for: **{staff_name}**")
-                
-                for i, q in enumerate(data['quiz']):
-                    correct_idx = int(q['correct_index'])
-                    correct_option = q['options'][correct_idx]
-                    user_choice = user_answers.get(i)
-                    
-                    if user_choice == correct_option:
-                        score += 1
-                        st.success(f"Q{i+1}: ✅ Correct")
-                    else:
-                        st.error(f"Q{i+1}: ❌ Wrong. Correct: {correct_option}")
-                
-                # Final Score Logic
-                percentage = (score / total) * 100
-                if percentage == 100:
-                    st.balloons()
-                    st.success(f"🏆 PERFECT SCORE! {score}/{total}")
-                elif percentage >= 80:
-                    st.warning(f"✅ PASSED: {score}/{total}")
+                if user_choice == correct_option:
+                    score += 1
+                    st.success(f"Q{i+1}: ✅ Correct")
                 else:
-                    st.error(f"❌ FAILED: {score}/{total} - Please read again.")
+                    st.error(f"Q{i+1}: ❌ Wrong. Correct: {correct_option}")
+            
+            # Final Score Logic
+            percentage = (score / total) * 100
+            if percentage == 100:
+                st.balloons()
+                st.success(f"🏆 PERFECT SCORE! {score}/{total}")
+            elif percentage >= 50:
+                st.warning(f"✅ PASSED: {score}/{total}")
+            else:
+                st.error(f"❌ FAILED: {score}/{total} - Please read again.")
                     
     else:
         st.warning("Please enter your name to see the questions.")
