@@ -52,7 +52,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 5. AI GENERATION FUNCTION ---
+# --- 5. AI GENERATION FUNCTION (UPDATED FOR FORMAL TONE) ---
 def generate_training_material(product_text):
     prompt = f"""
     You are a professional retail trainer for FirstCry.
@@ -62,7 +62,7 @@ def generate_training_material(product_text):
     {{
         "summary": "A comprehensive bulleted summary in English. It MUST cover every single feature, specification, material detail, and age recommendation mentioned in the input text. Do not leave out any technical details.",
         
-        "pitch_hinglish": "A detailed and persuasive sales pitch in 'Hinglish' (Hindi + English mix). IMPORTANT: You must incorporate EVERY single product specification (dimensions, weight, safety, materials, etc.) found in the input text into this pitch. Do not skip any features. Make it sound natural but ensure 100% of the product details are covered.",
+        "pitch_hinglish": "A FORMAL and PROFESSIONAL sales pitch in 'Hinglish' (Hindi + English mix). Use respectful language (address customer as 'Sir/Ma'am', use 'Aap', not 'Tu/Tum'). Avoid casual slang. Tone should be polite, expert-like, and courteous. IMPORTANT: You must incorporate EVERY single product specification (dimensions, weight, safety, materials, etc.) found in the input text into this pitch naturally.",
         
         "quiz": [
             {{
@@ -70,7 +70,7 @@ def generate_training_material(product_text):
                 "options": ["Option A", "Option B", "Option C"],
                 "correct_index": 0 
             }},
-            ... (Generate exactly 5 questions based on different features)
+            ... (Generate exactly 10 questions based on different features)
         ]
     }}
     """
@@ -119,7 +119,7 @@ if not st.session_state['test_mode']:
         st.info(data['summary'])
         
         st.markdown("---")
-        st.subheader("🗣️ Sales Pitch (Hindi)")
+        st.subheader("🗣️ Sales Pitch (Formal Hinglish)")
         st.markdown(f"<div class='hindi-text'>{data['pitch_hinglish']}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -140,14 +140,13 @@ else:
     staff_name = st.text_input("Enter Staff Name (Required):", disabled=st.session_state['quiz_submitted'])
     
     if staff_name:
-        # Determine if inputs should be disabled (locked)
         is_locked = st.session_state['quiz_submitted']
 
         with st.form("quiz_form"):
             user_answers = {}
             for i, q in enumerate(data['quiz']):
                 st.markdown(f"**Q{i+1}: {q['question']}**")
-                # KEY CHANGE: 'disabled=is_locked' prevents changing answers after submit
+                # Locked after submit to prevent cheating
                 user_answers[i] = st.radio(
                     f"Select answer:", 
                     q['options'], 
@@ -157,14 +156,14 @@ else:
                 )
                 st.write("") # Spacer
             
-            # Show Submit Button only if NOT yet submitted
+            # Submit Button (Locked after use)
             submit_button = st.form_submit_button("Submit Test", disabled=is_locked)
 
             if submit_button:
                 st.session_state['quiz_submitted'] = True
                 st.rerun()
 
-        # --- RESULTS SECTION (Runs outside the form so it persists) ---
+        # --- RESULTS SECTION ---
         if st.session_state['quiz_submitted']:
             score = 0
             total = len(data['quiz'])
