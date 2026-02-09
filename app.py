@@ -1,201 +1,205 @@
+
 import streamlit as st
-import pandas as pd
-from datetime import datetime
-import os
+import openai
+import json
 
-st.set_page_config(page_title="FirstCry Store Auditor", layout="wide")
+# --- 1. CONFIGURATION & SECRETS ---
+st.set_page_config(page_title="FirstCry Daily Training", layout="centered")
 
-# --- DATABASE LOGIC ---
-HISTORY_FILE = "cashbook_history.csv"
+# Check for API Key
+try:
+    api_key = st.secrets["OPENAI_API_KEY"]
+except:
+    st.error("🚨 API Key missing! Please go to Settings > Secrets and add OPENAI_API_KEY.")
+    st.stop()
 
-def save_entry(data):
-    file_exists = os.path.isfile(HISTORY_FILE)
-    df_history = pd.DataFrame([data])
-    # Append to file
-    df_history.to_csv(HISTORY_FILE, mode='a', index=False, header=not file_exists)
+client = openai.OpenAI(api_key=api_key)
 
-# --- COLORING FUNCTION ---
-def color_variance(val):
-    color = ''
-    if isinstance(val, (int, float)):
-        if val < -0.1: # Shortage (Red)
-            color = 'background-color: #ffcccc; color: black'
-        elif val > 0.1: # Excess (Green)
-            color = 'background-color: #ccffcc; color: black'
-    return color
+# --- 2. LOGIN SYSTEM (Gatekeeper) ---
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
 
-# --- SIDEBAR TOOLS ---
-st.sidebar.header("🛠️ Admin Controls")
-if st.sidebar.button("🗑️ Reset All History"):
-    if os.path.exists(HISTORY_FILE):
-        os.remove(HISTORY_FILE)
-        st.sidebar.success("History cleared! You can start fresh.")
-        st.rerun()
-
-st.sidebar.markdown("---")
-st.sidebar.header("Step 1: Sync POS Data")
-uploaded_file = st.sidebar.file_uploader("Upload 'Daywise Report.csv' (Generated NOW)", type="csv")
-
-st.title("🏦 FirstCry Automated Cashbook & Audit")
-st.markdown("---")
-
-# Create Tabs
-tab1, tab2 = st.tabs(["📝 Daily Entry (Shift Handover)", "📊 Monthly Variance Dashboard"])
-
-if uploaded_file:
-    # --- RIGOROUS DATA CLEANING ---
-    try:
-        df_pos = pd.read_csv(uploaded_file)
-        # Clean column names and date values
-        df_pos.columns = [col.strip() for col in df_pos.columns]
-        df_pos['Date'] = df_pos['Date'].astype(str).str.strip()
-    except Exception as e:
-        st.error(f"Error reading CSV: {e}")
-        st.stop()
-    
-    with tab1:
-        st.header("Shift Cash Reconciliation")
-        with st.form("audit_form"):
-            # Shift Details
-            col_date, col_shift, col_mgr = st.columns(3)
-            audit_date = col_date.date_input("Date", datetime.now())
-            shift_type = col_shift.selectbox("Audit Type", ["Day End Closing", "8:00 PM Shift Handover"])
-            mgr_name = col_mgr.text_input("Manager Name (Who is counting?)")
-
-            st.markdown("---")
-            
-            # Collection Entry
-            st.subheader("1. Manager Collection Entry (Actuals)")
-            c1, c2, c3 = st.columns(3)
-            mgr_cash = c1.number_input("Actual Cash Collected (₹)", min_value=0.0, step=1.0)
-            mgr_upi = c2.number_input("Actual UPI Collected (₹)", min_value=0.0, step=1.0)
-            mgr_card = c3.number_input("Actual Card Collected (₹)", min_value=0.0, step=1.0)
-            
-            # Manual Billing
-            st.markdown("---")
-            st.subheader("2. Manual Billing (Not in POS)")
-            m_col1, m_col2 = st.columns(2)
-            manual_amt = m_col1.number_input("Manual Sale Amount (₹)", min_value=0.0, step=1.0)
-            manual_mode = m_col2.selectbox("Mode", ["None", "Cash", "UPI", "Card"])
-
-            # Denominations
-            st.markdown("---")
-            st.subheader("3. Physical Cash Denominations")
-            col_den, col_bank = st.columns(2)
-            with col_den:
-                n500 = st.number_input("500 x", min_value=0, step=1)
-                n200 = st.number_input("200 x", min_value=0, step=1)
-                n100 = st.number_input("100 x", min_value=0, step=1)
-                n50 = st.number_input("50 x", min_value=0, step=1)
-                n20 = st.number_input("20 x", min_value=0, step=1)
-                n10 = st.number_input("10 x", min_value=0, step=1)
-                c5 = st.number_input("5 x", min_value=0, step=1)
-                c2 = st.number_input("2 x", min_value=0, step=1)
-                c1 = st.number_input("1 x", min_value=0, step=1)
-            
-            with col_bank:
-                bank_dep = st.number_input("Bank Deposit (₹)", min_value=0.0)
-
-            submit = st.form_submit_button("Verify, Save & Show Variance")
-
-        if submit:
-            if not mgr_name:
-                st.error("⚠️ Please enter Manager Name before saving!")
-            else:
-                search_date = audit_date.strftime("%d-%m-%Y")
-                pos_row = df_pos[df_pos['Date'].str.contains(search_date)]
-                
-                if pos_row.empty:
-                    st.error(f"❌ Date '{search_date}' not found in the uploaded report.")
-                else:
-                    # Extraction
-                    p_cash = pos_row.iloc[0]['ReceivedCashAmount']
-                    p_upi = pos_row.iloc[0]['WalletAmount']
-                    p_card = pos_row.iloc[0]['CardAmount']
-
-                    # Adjust for Manual Bills
-                    exp_cash = p_cash + (manual_amt if manual_mode == "Cash" else 0)
-                    exp_upi = p_upi + (manual_amt if manual_mode == "UPI" else 0)
-                    exp_card = p_card + (manual_amt if manual_mode == "Card" else 0)
-
-                    # Physical Total
-                    physical = (n500*500)+(n200*200)+(n100*100)+(n50*50)+(n20*20)+(n10*10)+(c5*5)+(c2*2)+(c1*1)
-                    
-                    # Save to History
-                    save_entry({
-                        "Date": search_date,
-                        "Shift": shift_type,
-                        "Manager": mgr_name,
-                        "Actual_Cash": mgr_cash, "POS_Cash_Exp": exp_cash,
-                        "Actual_UPI": mgr_upi, "POS_UPI_Exp": exp_upi,
-                        "Actual_Card": mgr_card, "POS_Card_Exp": exp_card,
-                        "Physical_Drawer": physical, "Bank_Deposit": bank_dep
-                    })
-                    
-                    # --- DAILY RESULTS ---
-                    st.markdown("---")
-                    st.header(f"Audit Result: {shift_type} ({mgr_name})")
-                    st.info(f"💵 **Net Physical Cash Counted: ₹{physical}**")
-
-                    v1, v2, v3 = st.columns(3)
-                    v1.metric("Cash vs POS", f"₹{mgr_cash}", f"{round(mgr_cash - exp_cash, 2)} Var", delta_color="inverse")
-                    v2.metric("UPI vs POS", f"₹{mgr_upi}", f"{round(mgr_upi - exp_upi, 2)} Var", delta_color="inverse")
-                    v3.metric("Card vs POS", f"₹{mgr_card}", f"{round(mgr_card - exp_card, 2)} Var", delta_color="inverse")
-                    
-                    if physical == mgr_cash:
-                        st.success(f"✅ Drawer Tally: Matches (₹{physical})")
-                        if mgr_cash == exp_cash: st.balloons()
-                    else:
-                        st.error(f"⚠️ Drawer Mismatch: Physical ₹{physical} vs Entered ₹{mgr_cash}")
-
-    with tab2:
-        st.header("Monthly Variance & Handover Log")
-        if os.path.isfile(HISTORY_FILE):
-            h_df = pd.read_csv(HISTORY_FILE)
-            
-            # --- CRITICAL FIX: Ensure Data is Numeric for Calculations ---
-            cols_to_numeric = ['Actual_Cash', 'POS_Cash_Exp', 'Actual_UPI', 'POS_UPI_Exp', 'Actual_Card', 'POS_Card_Exp', 'Physical_Drawer', 'Bank_Deposit']
-            for col in cols_to_numeric:
-                if col in h_df.columns:
-                    h_df[col] = pd.to_numeric(h_df[col], errors='coerce').fillna(0)
-
-            # Check if columns exist (Schema Check)
-            if 'Shift' not in h_df.columns:
-                 st.error("⚠️ History file format is old. Please click 'Reset All History' in the sidebar to add Shift columns.")
-            else:
-                # Calculate Variances
-                h_df['Cash_Var'] = h_df['Actual_Cash'] - h_df['POS_Cash_Exp']
-                h_df['UPI_Var'] = h_df['Actual_UPI'] - h_df['POS_UPI_Exp']
-                h_df['Card_Var'] = h_df['Actual_Card'] - h_df['POS_Card_Exp']
-                h_df['Drawer_Diff'] = h_df['Physical_Drawer'] - h_df['Actual_Cash']
-
-                # Select Columns to Show
-                display_cols = ['Date', 'Shift', 'Manager', 
-                                'Actual_Cash', 'POS_Cash_Exp', 'Cash_Var',
-                                'UPI_Var', 'Card_Var', 'Drawer_Diff', 'Bank_Deposit']
-
-                # Display Table with Highlighting
-                st.dataframe(
-                    h_df[display_cols].style.applymap(color_variance, subset=['Cash_Var', 'UPI_Var', 'Card_Var', 'Drawer_Diff']),
-                    use_container_width=True
-                )
-                
-                # --- MONTHLY NET VARIANCE SUMMARY ---
-                st.markdown("---")
-                st.subheader("Monthly Net Performance")
-                
-                m1, m2, m3, m4 = st.columns(4)
-                # Calculating Sums explicitly
-                net_cash_var = h_df['Cash_Var'].sum()
-                net_upi_var = h_df['UPI_Var'].sum()
-                net_card_var = h_df['Card_Var'].sum()
-                total_deposit = h_df['Bank_Deposit'].sum()
-
-                m1.metric("Net Cash Variance", f"₹{round(net_cash_var, 2)}", delta=f"{round(net_cash_var, 2)}", delta_color="inverse")
-                m2.metric("Net UPI Variance", f"₹{round(net_upi_var, 2)}", delta=f"{round(net_upi_var, 2)}", delta_color="inverse")
-                m3.metric("Net Card Variance", f"₹{round(net_card_var, 2)}", delta=f"{round(net_card_var, 2)}", delta_color="inverse")
-                m4.metric("Total Bank Deposits", f"₹{round(total_deposit, 2)}")
+def check_login():
+    st.markdown("### 🔒 FirstCry Staff Login")
+    password = st.text_input("Enter Store Password", type="password")
+    if st.button("Login"):
+        # Checks against the password in Secrets (or defaults to Firstcry2026)
+        secret_pass = st.secrets.get("APP_PASSWORD", "Firstcry2026") 
+        if password == secret_pass:
+            st.session_state["logged_in"] = True
+            st.rerun()
         else:
-            st.info("No entries yet. Submit an audit to see history.")
+            st.error("❌ Incorrect Password")
+
+if not st.session_state["logged_in"]:
+    check_login()
+    st.stop()
+
+# --- 3. SESSION STATE INITIALIZATION ---
+if 'generated_content' not in st.session_state:
+    st.session_state['generated_content'] = None
+if 'test_mode' not in st.session_state:
+    st.session_state['test_mode'] = False
+if 'quiz_submitted' not in st.session_state:
+    st.session_state['quiz_submitted'] = False
+
+# --- 4. CSS STYLING ---
+st.markdown("""
+    <style>
+    .big-font { font-size:20px !important; color: #E91E63; font-weight: bold; }
+    .hindi-text { font-family: 'Arial', sans-serif; font-size: 18px; color: #333; background-color: #f0f2f6; padding: 15px; border-radius: 10px; }
+    .stButton>button { background-color: #E91E63; color: white; width: 100%; }
+    .success-box { padding: 15px; background-color: #d4edda; color: #155724; border-radius: 10px; margin-bottom: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 5. AI GENERATION FUNCTION (UPDATED FOR FORMAL TONE) ---
+def generate_training_material(product_text):
+    prompt = f"""
+    You are a professional retail trainer for FirstCry.
+    Context: Use the following product details: "{product_text}"
+    
+    Output strictly in JSON format with this structure:
+    {{
+        "summary": "A comprehensive bulleted summary in English. It MUST cover every single feature, specification, material detail, and age recommendation mentioned in the input text. Do not leave out any technical details.",
+        
+        "pitch_hinglish": "A FORMAL and PROFESSIONAL sales pitch in 'Hinglish' (Hindi + English mix). Use respectful language (address customer as 'Sir/Ma'am', use 'Aap', not 'Tu/Tum'). Avoid casual slang. Tone should be polite, expert-like, and courteous. IMPORTANT: You must incorporate EVERY single product specification (dimensions, weight, safety, materials, etc.) found in the input text into this pitch naturally.",
+        
+        "quiz": [
+            {{
+                "question": "Question 1 in Hinglish covering a specific feature",
+                "options": ["Option A", "Option B", "Option C"],
+                "correct_index": 0 
+            }},
+            ... (Generate exactly 10 questions based on different features)
+        ]
+    }}
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            response_format={ "type": "json_object" },
+            messages=[{"role": "system", "content": "You are a helpful assistant that outputs JSON."},
+                      {"role": "user", "content": prompt}]
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        st.error(f"Error generating content: {e}")
+        return None
+
+# --- 6. APP UI LOGIC ---
+
+# HEADER
+st.image("https://cdn.fcglcdn.com/brainbees/images/n/fc_logo.png", width=150)
+st.title("FirstCry Product of the Day")
+
+# --- VIEW 1: STUDY MODE (Shows Summary & Pitch) ---
+if not st.session_state['test_mode']:
+    
+    st.info("ℹ️ Step 1: Generate Training -> Step 2: Read Pitch -> Step 3: Start Test")
+    
+    # Input Box
+    if not st.session_state['generated_content']:
+        product_input = st.text_area("Paste Product Details Here:", height=150)
+        if st.button("Generate Training Module"):
+            if product_input:
+                with st.spinner("Creating Summary, Pitch, and Quiz..."):
+                    data = generate_training_material(product_input)
+                    if data:
+                        st.session_state['generated_content'] = data
+                        st.rerun()
+            else:
+                st.warning("Please paste product details first.")
+
+    # Show Content (Summary + Pitch)
+    if st.session_state['generated_content']:
+        data = st.session_state['generated_content']
+        
+        st.markdown("---")
+        st.subheader("📌 Product Summary")
+        st.info(data['summary'])
+        
+        st.markdown("---")
+        st.subheader("🗣️ Sales Pitch (Formal Hinglish)")
+        st.markdown(f"<div class='hindi-text'>{data['pitch_hinglish']}</div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.warning("⚠️ Once you click 'Start Test', the summary and pitch will disappear!")
+        
+        if st.button("🔒 Lock Content & Start Test"):
+            st.session_state['test_mode'] = True
+            st.rerun()
+
+# --- VIEW 2: EXAM MODE (Summary Hidden + Anti-Cheat Locked Inputs) ---
 else:
-    st.warning("Please upload the POS Report CSV in the sidebar.")
+    data = st.session_state['generated_content']
+    
+    st.markdown("### 📝 Knowledge Check")
+    st.info("The study material is now hidden. Good luck!")
+    
+    # STAFF NAME INPUT
+    staff_name = st.text_input("Enter Staff Name (Required):", disabled=st.session_state['quiz_submitted'])
+    
+    if staff_name:
+        is_locked = st.session_state['quiz_submitted']
+
+        with st.form("quiz_form"):
+            user_answers = {}
+            for i, q in enumerate(data['quiz']):
+                st.markdown(f"**Q{i+1}: {q['question']}**")
+                # Locked after submit to prevent cheating
+                user_answers[i] = st.radio(
+                    f"Select answer:", 
+                    q['options'], 
+                    key=f"q{i}", 
+                    index=None, 
+                    disabled=is_locked 
+                )
+                st.write("") # Spacer
+            
+            # Submit Button (Locked after use)
+            submit_button = st.form_submit_button("Submit Test", disabled=is_locked)
+
+            if submit_button:
+                st.session_state['quiz_submitted'] = True
+                st.rerun()
+
+        # --- RESULTS SECTION ---
+        if st.session_state['quiz_submitted']:
+            score = 0
+            total = len(data['quiz'])
+            
+            st.markdown("---")
+            st.markdown(f"### 📊 Result for: **{staff_name}**")
+            
+            for i, q in enumerate(data['quiz']):
+                correct_idx = int(q['correct_index'])
+                correct_option = q['options'][correct_idx]
+                user_choice = user_answers.get(i)
+                
+                if user_choice == correct_option:
+                    score += 1
+                    st.success(f"Q{i+1}: ✅ Correct")
+                else:
+                    st.error(f"Q{i+1}: ❌ Wrong. Correct: {correct_option}")
+            
+            # Final Score Logic
+            percentage = (score / total) * 100
+            if percentage == 100:
+                st.balloons()
+                st.success(f"🏆 PERFECT SCORE! {score}/{total}")
+            elif percentage >= 50:
+                st.warning(f"✅ PASSED: {score}/{total}")
+            else:
+                st.error(f"❌ FAILED: {score}/{total} - Please read again.")
+                    
+    else:
+        st.warning("Please enter your name to see the questions.")
+
+    # Reset Button
+    st.markdown("---")
+    if st.button("🔄 Start New Product Training"):
+        st.session_state['generated_content'] = None
+        st.session_state['test_mode'] = False
+        st.session_state['quiz_submitted'] = False
+        st.rerun()
