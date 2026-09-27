@@ -1,4 +1,3 @@
-
 import streamlit as st
 import openai
 import json
@@ -161,6 +160,11 @@ else:
             submit_button = st.form_submit_button("Submit Test", disabled=is_locked)
 
             if submit_button:
+                # Save answers NOW. After rerun the radios are redrawn as
+                # disabled, and Streamlit resets their values to None,
+                # which is why every answer was being marked wrong.
+                st.session_state['saved_answers'] = dict(user_answers)
+                st.session_state['saved_staff_name'] = staff_name
                 st.session_state['quiz_submitted'] = True
                 st.rerun()
 
@@ -168,20 +172,28 @@ else:
         if st.session_state['quiz_submitted']:
             score = 0
             total = len(data['quiz'])
-            
+            saved_answers = st.session_state.get('saved_answers', {})
+
             st.markdown("---")
-            st.markdown(f"### 📊 Result for: **{staff_name}**")
-            
+            st.markdown(f"### 📊 Result for: **{st.session_state.get('saved_staff_name', staff_name)}**")
+
             for i, q in enumerate(data['quiz']):
-                correct_idx = int(q['correct_index'])
-                correct_option = q['options'][correct_idx]
-                user_choice = user_answers.get(i)
-                
-                if user_choice == correct_option:
+                options = q['options']
+                try:
+                    correct_idx = int(q['correct_index'])
+                except (KeyError, TypeError, ValueError):
+                    correct_idx = 0
+                correct_idx = max(0, min(correct_idx, len(options) - 1))
+                correct_option = options[correct_idx]
+                user_choice = saved_answers.get(i)
+
+                if user_choice is not None and str(user_choice).strip() == str(correct_option).strip():
                     score += 1
                     st.success(f"Q{i+1}: ✅ Correct")
+                elif user_choice is None:
+                    st.error(f"Q{i+1}: ❌ Not answered. Correct: {correct_option}")
                 else:
-                    st.error(f"Q{i+1}: ❌ Wrong. Correct: {correct_option}")
+                    st.error(f"Q{i+1}: ❌ Wrong (you chose: {user_choice}). Correct: {correct_option}")
             
             # Final Score Logic
             percentage = (score / total) * 100
@@ -202,4 +214,6 @@ else:
         st.session_state['generated_content'] = None
         st.session_state['test_mode'] = False
         st.session_state['quiz_submitted'] = False
+        st.session_state['saved_answers'] = {}
+        st.session_state['saved_staff_name'] = ""
         st.rerun()
